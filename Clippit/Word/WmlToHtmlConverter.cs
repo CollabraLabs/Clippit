@@ -526,6 +526,20 @@ namespace Clippit.Word
                 return CreateBorderDivs(wordDoc, settings, element.Elements());
             }
 
+            // Transform mc:AlternateContent (e.g. text boxes wrapped as DrawingML in mc:Choice with a
+            // VML mc:Fallback). Without this, the whole subtree is ignored and text boxes are lost.
+            // Prefer the Choice (modern: wps:wsp/DrawingML, handled by ProcessTextBoxDrawing); else Fallback.
+            if (element.Name == MC.AlternateContent)
+            {
+                var pick = element.Element(MC.Choice) ?? element.Element(MC.Fallback);
+                if (pick == null)
+                    return null;
+                return pick
+                    .Elements()
+                    .Select(e => ConvertToHtmlTransform(wordDoc, settings, e, suppressTrailingWhiteSpace, currentMarginLeft))
+                    .ToList();
+            }
+
             // Ignore element.
             return null;
         }
