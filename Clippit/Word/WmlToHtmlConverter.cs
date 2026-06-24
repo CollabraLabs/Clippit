@@ -182,6 +182,10 @@ namespace Clippit.Word
 
             ReifyStylesAndClasses(htmlConverterSettings, xhtml);
 
+            // Floating text boxes are anchored inside a run, so their block <div> ends up nested in the
+            // owning heading/paragraph (invalid, and it splits the heading text). Hoist them out.
+            HoistFloatingBlocks(xhtml);
+
             // Note: the xhtml returned by ConvertToHtmlTransform contains objects of type
             // XEntity.  PtOpenXmlUtil.cs define the XEntity class.  See
             // http://blogs.msdn.com/ericwhite/archive/2010/01/21/writing-entity-references-using-linq-to-xml.aspx
@@ -3387,6 +3391,43 @@ namespace Clippit.Word
         }
 
         #region Text Box Processing
+
+        // Move block-level elements (text-box <div>, <table>) that ended up nested inside a
+        // heading or paragraph out to just before that heading/paragraph. Anchored floating shapes
+        // (e.g. mc:AlternateContent text boxes) are emitted at their run position, which nests a block
+        // inside <h1>-<h6>/<p> -- invalid HTML that also breaks the heading text apart.
+        private static void HoistFloatingBlocks(XElement xhtml)
+        {
+            XNamespace ns = "http://www.w3.org/1999/xhtml";
+            var blockNames = new HashSet<XName> { ns + "div", ns + "table" };
+            var hostNames = new HashSet<XName>
+            {
+                ns + "h1", ns + "h2", ns + "h3", ns + "h4", ns + "h5", ns + "h6", ns + "p",
+            };
+            bool moved;
+            do
+            {
+                moved = false;
+                foreach (var block in xhtml.Descendants().Where(e => blockNames.Contains(e.Name)).ToList())
+                {
+                    var host = block.Ancestors().FirstOrDefault(a => hostNames.Contains(a.Name));
+                    if (host == null)
+                        continue;
+                    var wrapper = block.Parent;
+                    block.Remove();
+                    host.AddBeforeSelf(block);
+                    // drop now-empty inline wrappers (e.g. <span>) left where the block used to be
+                    while (wrapper != null && wrapper != host && !wrapper.Nodes().Any())
+                    {
+                        var up = wrapper.Parent;
+                        wrapper.Remove();
+                        wrapper = up;
+                    }
+                    moved = true;
+                    break; // tree changed -- rescan from the top
+                }
+            } while (moved);
+        }
 
         private static XElement? ProcessTextBoxDrawing(
             WordprocessingDocument wordDoc,
