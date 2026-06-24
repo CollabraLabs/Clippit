@@ -3505,12 +3505,21 @@ namespace Clippit.Word
 
             var style = new Dictionary<string, string>();
             // Render text boxes as a standalone block on their own line (not a floating inline-block)
-            // so they never sit beside the heading/paragraph they were anchored in.
+            // so they never sit beside the heading/paragraph they were anchored in. The box grows to
+            // fit its content (no fixed height) and long content wraps, so text never spills outside.
             style.AddIfMissing("display", "block");
             style.AddIfMissing("clear", "both");
-            style.AddIfMissing("overflow", "hidden");
+            style.AddIfMissing("word-wrap", "break-word");
+            style.AddIfMissing("overflow-wrap", "anywhere");
             style.AddIfMissing("padding", "4pt");
-            style.AddIfMissing("margin", "3pt 0");
+            // Honor the anchor's horizontal alignment (center/right) for the box position.
+            var hAlign = (string)containerElement.Element(WP.positionH)?.Element(WP.align);
+            style.AddIfMissing(
+                "margin",
+                hAlign == "center" ? "3pt auto"
+                : (hAlign == "right" || hAlign == "outside") ? "3pt 0 3pt auto"
+                : "3pt 0"
+            );
             if (extentCx != null)
                 style.AddIfMissing(
                     "max-width",
