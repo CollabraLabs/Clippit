@@ -3458,31 +3458,19 @@ namespace Clippit.Word
             var extentCy = (int?)containerElement.Elements(WP.extent).Attributes(NoNamespace.cy).FirstOrDefault();
 
             var style = new Dictionary<string, string>();
-            style.AddIfMissing("display", "inline-block");
+            // Render text boxes as a standalone bordered block on their own line (not a floating
+            // inline-block) so they never sit beside the heading/paragraph they were anchored in.
+            style.AddIfMissing("display", "block");
+            style.AddIfMissing("clear", "both");
             style.AddIfMissing("overflow", "hidden");
-            style.AddIfMissing("padding", "2pt");
+            style.AddIfMissing("border", "1px solid #EE0000");
+            style.AddIfMissing("padding", "4pt");
+            style.AddIfMissing("margin", "3pt 0");
             if (extentCx != null)
                 style.AddIfMissing(
-                    "width",
+                    "max-width",
                     FormattableString.Invariant($"{(float)extentCx / ImageInfo.EmusPerInch:0.00}in")
                 );
-            if (extentCy != null)
-                style.AddIfMissing(
-                    "min-height",
-                    FormattableString.Invariant($"{(float)extentCy / ImageInfo.EmusPerInch:0.00}in")
-                );
-
-            // Only float anchored text boxes when the wrap mode implies surrounding text should flow
-            // around the shape. wp:wrapNone means no text wrap (overlap), and wp:wrapTopAndBottom
-            // pushes the shape to its own line — neither needs float.
-            if (containerElement.Name == WP.anchor)
-            {
-                var hasTextWrapping = containerElement
-                    .Elements()
-                    .Any(e => e.Name == WP.wrapSquare || e.Name == WP.wrapTight || e.Name == WP.wrapThrough);
-                if (hasTextWrapping)
-                    style.AddIfMissing("float", "left");
-            }
 
             // Text boxes have independent layout — reset the outer paragraph margin so that list/indent
             // offsets from the surrounding context do not incorrectly bleed into the text box interior.
