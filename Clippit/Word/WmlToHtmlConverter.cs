@@ -3458,12 +3458,11 @@ namespace Clippit.Word
             var extentCy = (int?)containerElement.Elements(WP.extent).Attributes(NoNamespace.cy).FirstOrDefault();
 
             var style = new Dictionary<string, string>();
-            // Render text boxes as a standalone bordered block on their own line (not a floating
-            // inline-block) so they never sit beside the heading/paragraph they were anchored in.
+            // Render text boxes as a standalone block on their own line (not a floating inline-block)
+            // so they never sit beside the heading/paragraph they were anchored in.
             style.AddIfMissing("display", "block");
             style.AddIfMissing("clear", "both");
             style.AddIfMissing("overflow", "hidden");
-            style.AddIfMissing("border", "1px solid #EE0000");
             style.AddIfMissing("padding", "4pt");
             style.AddIfMissing("margin", "3pt 0");
             if (extentCx != null)
@@ -3471,6 +3470,26 @@ namespace Clippit.Word
                     "max-width",
                     FormattableString.Invariant($"{(float)extentCx / ImageInfo.EmusPerInch:0.00}in")
                 );
+
+            // Honor the shape's own outline (a:ln) and fill (a:solidFill) so the box reflects its
+            // real style -- never force one. a:noFill => no border/background; srgbClr => that color.
+            var spPr = txbx.Parent?.Element(WPS.spPr);
+            if (spPr != null)
+            {
+                var fillClr = spPr.Elements(A.solidFill).Elements(A.srgbClr).Attributes("val").FirstOrDefault();
+                if (fillClr != null)
+                    style.AddIfMissing("background-color", "#" + (string)fillClr);
+
+                var ln = spPr.Element(A.ln);
+                if (ln != null && ln.Element(A.noFill) == null)
+                {
+                    var lnClr = ln.Elements(A.solidFill).Elements(A.srgbClr).Attributes("val").FirstOrDefault();
+                    var lnW = (int?)ln.Attribute("w");
+                    var widthPt = lnW.HasValue ? lnW.Value / 12700.0 : 0.75;
+                    var color = lnClr != null ? "#" + (string)lnClr : "#000000";
+                    style.AddIfMissing("border", FormattableString.Invariant($"{widthPt:0.##}pt solid {color}"));
+                }
+            }
 
             // Text boxes have independent layout — reset the outer paragraph margin so that list/indent
             // offsets from the surrounding context do not incorrectly bleed into the text box interior.
