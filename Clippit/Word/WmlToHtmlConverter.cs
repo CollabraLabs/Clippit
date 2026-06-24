@@ -3429,6 +3429,52 @@ namespace Clippit.Word
             } while (moved);
         }
 
+        // Resolve a DrawingML <a:solidFill> to a CSS "#rrggbb" string, supporting both an explicit
+        // <a:srgbClr> and a theme reference <a:schemeClr> (looked up in the document theme).
+        private static string? ColorFromSolidFill(XElement? solidFill, WordprocessingDocument wordDoc)
+        {
+            if (solidFill == null)
+                return null;
+            var srgb = (string?)solidFill.Elements(A.srgbClr).Attributes("val").FirstOrDefault();
+            if (srgb != null)
+                return "#" + srgb;
+            var scheme = (string?)solidFill.Elements(A.schemeClr).Attributes("val").FirstOrDefault();
+            if (scheme != null)
+            {
+                var hex = ResolveThemeColor(scheme, wordDoc);
+                if (hex != null)
+                    return "#" + hex;
+            }
+            return null;
+        }
+
+        // Look up a theme color name (accent1-6, dk1/lt1/dk2/lt2, hlink/folHlink; tx*/bg* mapped to
+        // dk*/lt*) in the theme's <a:clrScheme>. Color modifiers (tint/shade/lumMod) are not applied.
+        private static string? ResolveThemeColor(string schemeVal, WordprocessingDocument wordDoc)
+        {
+            var themePart = wordDoc.MainDocumentPart?.ThemePart;
+            if (themePart == null)
+                return null;
+            var clrScheme = themePart.GetXDocument().Root?.Descendants(A.clrScheme).FirstOrDefault();
+            if (clrScheme == null)
+                return null;
+            var name = schemeVal switch
+            {
+                "tx1" => "dk1",
+                "bg1" => "lt1",
+                "tx2" => "dk2",
+                "bg2" => "lt2",
+                _ => schemeVal,
+            };
+            var entry = clrScheme.Elements().FirstOrDefault(e => e.Name.LocalName == name);
+            if (entry == null)
+                return null;
+            var srgb = (string?)entry.Elements(A.srgbClr).Attributes("val").FirstOrDefault();
+            if (srgb != null)
+                return srgb;
+            return (string?)entry.Elements(A.sysClr).Attributes("lastClr").FirstOrDefault();
+        }
+
         private static XElement? ProcessTextBoxDrawing(
             WordprocessingDocument wordDoc,
             WmlToHtmlConverterSettings settings,
@@ -3472,22 +3518,22 @@ namespace Clippit.Word
                 );
 
             // Honor the shape's own outline (a:ln) and fill (a:solidFill) so the box reflects its
-            // real style -- never force one. a:noFill => no border/background; srgbClr => that color.
+            // real style -- never force one. a:noFill => no border/background. Colors come from
+            // a:srgbClr or a:schemeClr (resolved against the theme).
             var spPr = txbx.Parent?.Element(WPS.spPr);
             if (spPr != null)
             {
-                var fillClr = spPr.Elements(A.solidFill).Elements(A.srgbClr).Attributes("val").FirstOrDefault();
-                if (fillClr != null)
-                    style.AddIfMissing("background-color", "#" + (string)fillClr);
+                var fill = ColorFromSolidFill(spPr.Element(A.solidFill), wordDoc);
+                if (fill != null)
+                    style.AddIfMissing("background-color", fill);
 
                 var ln = spPr.Element(A.ln);
                 if (ln != null && ln.Element(A.noFill) == null)
                 {
-                    var lnClr = ln.Elements(A.solidFill).Elements(A.srgbClr).Attributes("val").FirstOrDefault();
+                    var lnColor = ColorFromSolidFill(ln.Element(A.solidFill), wordDoc) ?? "#000000";
                     var lnW = (int?)ln.Attribute("w");
                     var widthPt = lnW.HasValue ? lnW.Value / 12700.0 : 0.75;
-                    var color = lnClr != null ? "#" + (string)lnClr : "#000000";
-                    style.AddIfMissing("border", FormattableString.Invariant($"{widthPt:0.##}pt solid {color}"));
+                    style.AddIfMissing("border", FormattableString.Invariant($"{widthPt:0.##}pt solid {lnColor}"));
                 }
             }
 
