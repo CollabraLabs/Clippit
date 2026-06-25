@@ -2,7 +2,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <PackageId>Clippit</PackageId>
+    <!-- 커스텀 포크 패키지 식별자/버전. nupkg 파일명 = Clippit.3.5.1_custom.1.0.7.nupkg
+         (NuGet 버전 문자열엔 '_' / 4단계 숫자 불가 → "3.5.1_custom" 은 PackageId 로, 버전은 1.0.7) -->
+    <PackageId>Clippit.3.5.1_custom</PackageId>
+    <Version>1.0.7</Version>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <PackageIcon>logo.jpeg</PackageIcon>
