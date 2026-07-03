@@ -177,6 +177,7 @@ namespace Clippit.Word
             var rootElement = wordDoc.MainDocumentPart.GetXDocument().Root;
             FieldRetriever.AnnotateWithFieldInfo(wordDoc.MainDocumentPart);
             AnnotateForSections(wordDoc);
+            AnnotateBlockSeqForAnchors(rootElement);
 
             var xhtml = (XElement)ConvertToHtmlTransform(wordDoc, htmlConverterSettings, rootElement, false, 0m);
 
@@ -775,6 +776,11 @@ namespace Clippit.Word
                 isBidi
             );
 
+            // 원문 위치 앵커(id=p_{w14:paraId} / ps_{seq}). 표 내부 문단은 표가
+            // 첫 문단 paraId를 대표 앵커로 가져가므로 제외(문서 내 중복 id 방지).
+            if (!element.Ancestors(W.tbl).Any())
+                AddSourceAnchorId(paragraph, element);
+
             // The paragraph conversion might have created empty spans.
             // These can and should be removed because empty spans are
             // invalid in HTML5.
@@ -828,6 +834,42 @@ namespace Clippit.Word
             }
 
             return paragraph;
+        }
+
+        // 원문 앵커용 문서순 순번: w14:paraId가 없는 문단(구버전 Word 산출물)의
+        // 폴백 id=ps_{seq}에 쓴다. XML 트리를 바꾸지 않는 annotation이라
+        // 기존 변환(번호 베이킹·텍스트박스 픽스)에 영향 없음.
+        private sealed class BlockSeqAnnotation
+        {
+            public int Seq;
+        }
+
+        private static void AnnotateBlockSeqForAnchors(XElement rootElement)
+        {
+            var seq = 0;
+            foreach (var p in rootElement.Descendants(W.p))
+                p.AddAnnotation(new BlockSeqAnnotation { Seq = seq++ });
+        }
+
+        // w:p/w:tbl에서 변환된 HTML 블록에 원문 위치 앵커 id를 단다.
+        //   - id="p_{w14:paraId}" (OOXML 8자리 hex, Word 2010+ 자동 부여, 문서 수명 동안 안정)
+        //   - paraId 부재 시 id="ps_{문서순 seq}" 폴백
+        // 이미 id가 있으면 건드리지 않는다(중복 속성 방지).
+        private static void AddSourceAnchorId(XElement htmlBlock, XElement sourceElement)
+        {
+            if (htmlBlock == null || htmlBlock.Attribute("id") != null)
+                return;
+
+            var paraId = (string)sourceElement.Attribute(W14.paraId);
+            if (!string.IsNullOrEmpty(paraId))
+            {
+                htmlBlock.Add(new XAttribute("id", "p_" + paraId));
+                return;
+            }
+
+            var seqAnnotation = sourceElement.Annotation<BlockSeqAnnotation>();
+            if (seqAnnotation != null)
+                htmlBlock.Add(new XAttribute("id", "ps_" + seqAnnotation.Seq));
         }
 
         private static object ProcessTable(
@@ -960,6 +1002,16 @@ namespace Clippit.Word
             {
                 tableDiv.AddAnnotation(wrapperDivStyle);
             }
+
+            // 원문 위치 앵커: 표는 자체 paraId가 없으므로 표 내 첫 문단의 paraId를
+            // 대표 앵커로 사용. 중첩 표는 바깥 표가 같은 문단을 대표할 수 있어 제외(중복 id 방지).
+            if (!element.Ancestors(W.tbl).Any())
+            {
+                var firstTablePara = element.Descendants(W.p).FirstOrDefault();
+                if (firstTablePara != null)
+                    AddSourceAnchorId(table, firstTablePara);
+            }
+
             return tableDiv;
         }
 
