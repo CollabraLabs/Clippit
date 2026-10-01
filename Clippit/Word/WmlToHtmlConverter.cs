@@ -1015,6 +1015,21 @@ namespace Clippit.Word
             return tableDiv;
         }
 
+        // 셀이 시작하는 그리드 열(0부터). 행 앞의 빈 칸(w:trPr/w:gridBefore)과
+        // 앞선 셀들의 가로 병합 폭(w:gridSpan, 없으면 1)을 더한다.
+        private static int GridColumnOf(XElement tc)
+        {
+            var column =
+                (int?)tc.Parent.Elements(W.trPr).Elements(W.gridBefore).Attributes(W.val).FirstOrDefault() ?? 0;
+            foreach (var prev in tc.ElementsBeforeSelf(W.tc))
+                column += (int?)prev.Elements(W.tcPr).Elements(W.gridSpan).Attributes(W.val).FirstOrDefault() ?? 1;
+            return column;
+        }
+
+        // 행에서 주어진 그리드 열에서 시작하는 셀. 그 열이 다른 셀의 가로 병합에 덮여 있으면 null.
+        private static XElement CellAtGridColumn(XElement tr, int gridColumn) =>
+            tr.Elements(W.tc).FirstOrDefault(c => GridColumnOf(c) == gridColumn);
+
         [SuppressMessage("ReSharper", "PossibleNullReferenceException")]
         private static object ProcessTableCell(
             WordprocessingDocument wordDoc,
@@ -1031,8 +1046,11 @@ namespace Clippit.Word
             {
                 if ((string)tcPr.Elements(W.vMerge).Attributes(W.val).FirstOrDefault() == "restart")
                 {
+                    // 아래 행에서 이어지는 칸은 <w:tc> 순번이 아니라 그리드 열 위치로 찾는다.
+                    //   같은 행에 가로 병합(gridSpan) 칸이 앞서 있으면 행마다 <w:tc> 개수가 달라
+                    //   순번으로 찾으면 엉뚱한 칸을 보고 세로 병합 수를 1 로 잘못 센다.
                     var currentRow = element.Parent.ElementsBeforeSelf(W.tr).Count();
-                    var currentCell = element.ElementsBeforeSelf(W.tc).Count();
+                    var gridColumn = GridColumnOf(element);
                     var tbl = element.Parent.Parent;
                     var rowSpanCount = 1;
                     currentRow += 1;
@@ -1041,7 +1059,7 @@ namespace Clippit.Word
                         var row = tbl.Elements(W.tr).Skip(currentRow).FirstOrDefault();
                         if (row == null)
                             break;
-                        var cell2 = row.Elements(W.tc).Skip(currentCell).FirstOrDefault();
+                        var cell2 = CellAtGridColumn(row, gridColumn);
                         if (cell2 == null)
                             break;
                         if (cell2.Elements(W.tcPr).Elements(W.vMerge).FirstOrDefault() == null)
